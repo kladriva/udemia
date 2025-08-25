@@ -67,7 +67,8 @@ export const {
  },
   providers: [
     Resend({
-        from: "onboarding@resend.dev"
+        from: "onboarding@resend.dev",
+        apiKey: process.env.RESEND_API_KEY,
     }),
     ...authConfig.providers,
   ],
