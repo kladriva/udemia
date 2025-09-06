@@ -1,15 +1,51 @@
 version: '3.8'
 
 services:
-  app:
-    build: .
-    container_name: udemy-clone-app
+  # Base de données MySQL
+  database:
+    image: mysql:8.0
+    container_name: udemy-clone-db
     restart: unless-stopped
-    env_file:
-      - .env
+    environment:
+      MYSQL_DATABASE: ${MYSQL_DATABASE}
+      MYSQL_USER: ${MYSQL_USER}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD}
+    volumes:
+      - mysql_data:/var/lib/mysql
+      - ./scripts/init-db.sql:/docker-entrypoint-initdb.d/init-db.sql:ro
+    ports:
+      - "3306:3306"
     networks:
       - udemy-clone-network
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
+      timeout: 20s
+      retries: 10
 
+  # Application Next.js
+  app:
+    build: 
+      context: .
+      dockerfile: Dockerfile
+    container_name: udemy-clone-app
+    restart: unless-stopped
+    environment:
+      - NODE_ENV=production
+      - DATABASE_URL=mysql://${MYSQL_USER}:${MYSQL_PASSWORD}@database:3306/${MYSQL_DATABASE}
+    env_file:
+      - .env
+    depends_on:
+      database:
+        condition: service_healthy
+    networks:
+      - udemy-clone-network
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:3000/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # Reverse Proxy Nginx
   nginx:
     image: nginx:stable-alpine
     container_name: udemy-clone-nginx
@@ -21,9 +57,14 @@ services:
       - ./nginx/nginx.conf:/etc/nginx/conf.d/default.conf:ro
       - ./public:/app/public:ro # Monte le répertoire public pour les assets statiques
     depends_on:
-      - app
+      app:
+        condition: service_healthy
     networks:
       - udemy-clone-network
+
+volumes:
+  mysql_data:
+    driver: local
 
 networks:
   udemy-clone-network:
